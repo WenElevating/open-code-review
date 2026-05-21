@@ -202,9 +202,9 @@ const DocsPage: React.FC = () => {
                   {t('docs.installLabel')}
                 </h4>
                 <CodeBlock
-                  code="npm i -g open-code-review"
+                  code="npm i -g @alibaba-group/open-code-review"
                   copied={copiedIndex === 'install'}
-                  onCopy={() => handleCopy('npm i -g open-code-review', 'install')}
+                  onCopy={() => handleCopy('npm i -g @alibaba-group/open-code-review', 'install')}
                   copyLabel={t('docs.copy')}
                 />
               </div>

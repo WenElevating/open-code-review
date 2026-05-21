@@ -38,7 +38,7 @@ const QuickStartSection: React.FC = () => {
       icon: 'fa-solid fa-cloud-arrow-down',
       description: t('quickstart.step1Desc'),
       codeBlocks: [
-        { label: t('quickstart.step1Label1'), code: `npm i -g open-code-review` },
+        { label: t('quickstart.step1Label1'), code: `npm i -g @alibaba-group/open-code-review` },
         { label: t('quickstart.step1Label2'), code: `ocr version` }
       ]
     },
