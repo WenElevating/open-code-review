@@ -1,10 +1,35 @@
 #!/usr/bin/env node
 "use strict";
 
-const { spawnSync } = require("child_process");
+const { spawnSync, spawn } = require("child_process");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 
 const binaryPath = path.join(__dirname, "opencodereview");
+
+if (!process.env.OCR_NO_UPDATE) {
+  const stateDir = path.join(os.homedir(), ".open-code-review");
+  const tsFile = path.join(stateDir, "last-update-check");
+  const cooldownMs =
+    (parseInt(process.env.OCR_UPDATE_INTERVAL, 10) || 60) * 60 * 1000;
+
+  let shouldCheck = true;
+  try {
+    const mt = fs.statSync(tsFile).mtimeMs;
+    if (Date.now() - mt < cooldownMs) shouldCheck = false;
+  } catch (_) {}
+
+  if (shouldCheck) {
+    const updateScript = path.join(__dirname, "..", "scripts", "update.js");
+    const child = spawn(process.execPath, [updateScript], {
+      detached: true,
+      stdio: "ignore",
+      env: Object.assign({}, process.env, { OCR_NO_UPDATE: "1" }),
+    });
+    child.unref();
+  }
+}
 
 const result = spawnSync(binaryPath, process.argv.slice(2), {
   stdio: "inherit",

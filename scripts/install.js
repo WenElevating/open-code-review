@@ -218,7 +218,19 @@ async function main() {
   info("  ocr review              Start a code review");
 }
 
-main().catch((err) => {
-  error(err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    error(err.message);
+    process.exit(1);
+  });
+} else {
+  module.exports = {
+    detectPlatform,
+    loadPackageJson,
+    buildUrl,
+    download,
+    downloadText,
+    downloadBinary,
+    computeChecksum,
+  };
+}
