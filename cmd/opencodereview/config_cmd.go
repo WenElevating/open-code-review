@@ -83,6 +83,7 @@ type LlmConfig struct {
 	Protocol     string         `json:"protocol,omitempty"`      // anthropic, anthropic_exact, openai, openai_exact
 	UseAnthropic *bool          `json:"use_anthropic,omitempty"` // nil = default true; false = OpenAI protocol
 	ExtraBody    map[string]any `json:"extra_body,omitempty"`
+	Debug        bool           `json:"debug,omitempty"` // Print LLM request/response diagnostics
 }
 
 // TelemetryConfig holds telemetry-specific settings.
@@ -145,6 +146,12 @@ func setConfigValue(cfg *Config, key, value string) error {
 			return fmt.Errorf("invalid boolean for llm.use_anthropic: %w", err)
 		}
 		cfg.Llm.UseAnthropic = &b
+	case "llm.debug", "llm.Debug":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid boolean for llm.debug: %w", err)
+		}
+		cfg.Llm.Debug = b
 	case "language", "Language":
 		cfg.Language = value
 	case "telemetry.enabled", "telemetry.Enabled":
@@ -174,7 +181,7 @@ func setConfigValue(cfg *Config, key, value string) error {
 		}
 		cfg.Llm.ExtraBody = m
 	default:
-		return fmt.Errorf("unknown config key: %s\nSupported keys: llm.url, llm.auth_token, llm.model, llm.protocol, llm.use_anthropic, llm.extra_body, language, telemetry.enabled, telemetry.exporter, telemetry.otlp_endpoint, telemetry.content_logging", key)
+		return fmt.Errorf("unknown config key: %s\nSupported keys: llm.url, llm.auth_token, llm.model, llm.protocol, llm.use_anthropic, llm.extra_body, llm.debug, language, telemetry.enabled, telemetry.exporter, telemetry.otlp_endpoint, telemetry.content_logging", key)
 	}
 	return nil
 }

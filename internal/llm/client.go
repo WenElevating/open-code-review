@@ -192,6 +192,7 @@ type ClientConfig struct {
 	Timeout        time.Duration  // Request timeout
 	ExtraBody      map[string]any // Vendor-specific fields merged into every request body
 	AutoAppendPath *bool          // nil/default true appends protocol default path to base URLs
+	Debug          bool           // Print request/response diagnostics without credentials
 }
 
 // --- Factory ---
@@ -205,6 +206,7 @@ func NewLLMClient(ep ResolvedEndpoint) LLMClient {
 		Model:          ep.Model,
 		ExtraBody:      ep.ExtraBody,
 		AutoAppendPath: &ep.AutoAppendPath,
+		Debug:          ep.Debug,
 	}
 	if ep.Protocol == "anthropic" {
 		return NewAnthropicClient(cfg)
@@ -432,6 +434,9 @@ func (c *OpenAIClient) doRequestCtx(ctx context.Context, model string, req ChatR
 	if err != nil {
 		return nil, fmt.Errorf("marshal request body: %w", err)
 	}
+	if c.cfg.Debug {
+		debugLogRequest("openai", c.cfg.URL, payload)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -465,13 +470,17 @@ func (c *OpenAIClient) doRequestCtx(ctx context.Context, model string, req ChatR
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	return &ChatResponse{
+	chatResp := &ChatResponse{
 		ID:      apiResp.ID,
 		Model:   apiResp.Model,
 		Choices: apiResp.Choices,
 		Headers: resp.Header,
 		Usage:   resolveUsage(bodyBytes),
-	}, nil
+	}
+	if c.cfg.Debug {
+		debugLogResponse("openai", resp.StatusCode, chatResp)
+	}
+	return chatResp, nil
 }
 
 // --- AnthropicClient ---
@@ -646,6 +655,9 @@ func (c *AnthropicClient) doRequestCtx(ctx context.Context, model string, req Ch
 	if err != nil {
 		return nil, fmt.Errorf("marshal request body: %w", err)
 	}
+	if c.cfg.Debug {
+		debugLogRequest("anthropic", c.cfg.URL, payload)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(payload))
 	if err != nil {
@@ -675,6 +687,9 @@ func (c *AnthropicClient) doRequestCtx(ctx context.Context, model string, req Ch
 	chatResp, err := c.parseResponse(bodyBytes, resp.Header)
 	if err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if c.cfg.Debug {
+		debugLogResponse("anthropic", resp.StatusCode, chatResp)
 	}
 	return chatResp, nil
 }
@@ -804,6 +819,37 @@ func mergeExtraBody(base any, extraBody map[string]any) ([]byte, error) {
 		m[k] = v
 	}
 	return json.Marshal(m)
+}
+
+func debugLogRequest(protocol, url string, payload []byte) {
+	fmt.Fprintf(stdout.Writer(), "[llm-debug] request %s POST %s\n%s\n", protocol, url, prettyJSON(payload))
+}
+
+func debugLogResponse(protocol string, statusCode int, resp *ChatResponse) {
+	summary := map[string]any{
+		"id":           resp.ID,
+		"model":        resp.Model,
+		"tool_calls":   resp.ToolCalls(),
+		"content":      resp.Content(),
+		"choice_count": len(resp.Choices),
+	}
+	if resp.Usage != nil {
+		summary["usage"] = resp.Usage
+	}
+	payload, _ := json.Marshal(summary)
+	fmt.Fprintf(stdout.Writer(), "[llm-debug] response %s status=%d\n%s\n", protocol, statusCode, prettyJSON(payload))
+}
+
+func prettyJSON(payload []byte) string {
+	var v any
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return string(payload)
+	}
+	formatted, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return string(payload)
+	}
+	return string(formatted)
 }
 
 // parseResponse converts Anthropic JSON response into ChatResponse.

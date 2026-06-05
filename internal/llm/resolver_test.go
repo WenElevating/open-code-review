@@ -149,6 +149,36 @@ func TestResolveEndpoint_ConfigFileProtocolOverridesUseAnthropic(t *testing.T) {
 	}
 }
 
+func TestResolveEndpoint_ConfigFileDebug(t *testing.T) {
+	t.Setenv("OCR_LLM_URL", "")
+	t.Setenv("OCR_LLM_TOKEN", "")
+	t.Setenv("OCR_LLM_MODEL", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
+
+	cfg := configFile{
+		Llm: llmFileConfig{
+			URL:       "https://api.example.com/v1/chat/completions",
+			AuthToken: "test-token",
+			Model:     "debug-model",
+			Protocol:  "openai_exact",
+			Debug:     true,
+		},
+	}
+	data, _ := json.Marshal(cfg)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	os.WriteFile(cfgPath, data, 0644)
+
+	ep, err := ResolveEndpoint(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ep.Debug {
+		t.Fatal("expected debug mode to be enabled")
+	}
+}
+
 func boolPtr(v bool) *bool {
 	return &v
 }

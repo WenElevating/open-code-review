@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/open-code-review/open-code-review/internal/config/template"
 	"github.com/open-code-review/open-code-review/internal/llm"
 	"github.com/open-code-review/open-code-review/internal/session"
+	"github.com/open-code-review/open-code-review/internal/stdout"
 )
 
 type emptyResponseLLM struct {
@@ -83,5 +85,35 @@ func TestFirstWarningOfType(t *testing.T) {
 
 	if warning := firstWarningOfType(warnings, "missing"); warning != nil {
 		t.Fatalf("expected nil for missing warning type, got %#v", warning)
+	}
+}
+
+func TestDebugToolResultPrintsWhenEnabled(t *testing.T) {
+	var out bytes.Buffer
+	restore := stdout.SetWriterForTest(&out)
+	defer restore()
+
+	agent := New(Args{Debug: true})
+	agent.debugToolResult("file_read_diff", "call_1", "diff result")
+
+	log := out.String()
+	if !strings.Contains(log, "[ocr-debug] tool result file_read_diff id=call_1") {
+		t.Fatalf("missing tool result header:\n%s", log)
+	}
+	if !strings.Contains(log, "diff result") {
+		t.Fatalf("missing tool result body:\n%s", log)
+	}
+}
+
+func TestDebugToolResultDoesNotPrintWhenDisabled(t *testing.T) {
+	var out bytes.Buffer
+	restore := stdout.SetWriterForTest(&out)
+	defer restore()
+
+	agent := New(Args{})
+	agent.debugToolResult("file_read_diff", "call_1", "diff result")
+
+	if out.Len() != 0 {
+		t.Fatalf("expected no debug output, got:\n%s", out.String())
 	}
 }

@@ -112,6 +112,9 @@ type Args struct {
 	// injected into plan and main_task prompts via {{requirement_background}}.
 	Background string
 
+	// Debug prints LLM/tool diagnostics for troubleshooting provider compatibility.
+	Debug bool
+
 	// Model is the user-configured model name used as fallback when
 	// template phases (plan/memory_compression) don't specify one.
 	Model string
@@ -912,6 +915,7 @@ func (a *Agent) executeToolCall(ctx context.Context, newPath string, call llm.To
 	}
 
 	if t == tool.TaskDone {
+		a.debugToolResult(t.Name(), call.ID, "Task completed successfully.")
 		return tool.Complete()
 	}
 
@@ -922,7 +926,9 @@ func (a *Agent) executeToolCall(ctx context.Context, newPath string, call llm.To
 
 	var args map[string]any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-		return tool.Of(fmt.Sprintf("Error parsing tool arguments for %s: %v", t.Name(), err))
+		result := fmt.Sprintf("Error parsing tool arguments for %s: %v", t.Name(), err)
+		a.debugToolResult(t.Name(), call.ID, result)
+		return tool.Of(result)
 	}
 
 	// Inject current file path as default for code_comment when not provided.
@@ -942,6 +948,7 @@ func (a *Agent) executeToolCall(ctx context.Context, newPath string, call llm.To
 		comments, errMsg := tool.ParseComments(args)
 		if errMsg != "" {
 			telemetry.RecordToolCall(ctx, t.Name(), time.Since(startTime), false)
+			a.debugToolResult(t.Name(), call.ID, errMsg)
 			return tool.Of(errMsg)
 		}
 
@@ -986,6 +993,7 @@ func (a *Agent) executeToolCall(ctx context.Context, newPath string, call llm.To
 				return []model.LlmComment{}, nil
 			})
 			telemetry.RecordToolCall(asyncCtx, toolName, time.Since(startTime), true)
+			a.debugToolResult(t.Name(), call.ID, tool.CommentSucceed)
 			return tool.Of(tool.CommentSucceed)
 		}
 
@@ -996,6 +1004,7 @@ func (a *Agent) executeToolCall(ctx context.Context, newPath string, call llm.To
 		if rec != nil {
 			rec.AddToolResult(t.Name(), call.Function.Arguments, tool.CommentSucceed)
 		}
+		a.debugToolResult(t.Name(), call.ID, tool.CommentSucceed)
 		return tool.Of(tool.CommentSucceed)
 	}
 
@@ -1008,13 +1017,30 @@ func (a *Agent) executeToolCall(ctx context.Context, newPath string, call llm.To
 
 	if err != nil {
 		telemetry.PrintToolCallError(t.Name(), err)
-		return tool.Of(fmt.Sprintf("Error executing tool %s: %v", t.Name(), err))
+		result := fmt.Sprintf("Error executing tool %s: %v", t.Name(), err)
+		a.debugToolResult(t.Name(), call.ID, result)
+		return tool.Of(result)
 	}
 	telemetry.PrintToolCallFinished(t.Name(), dur)
 	if rec != nil {
 		rec.AddToolResult(t.Name(), call.Function.Arguments, result)
 	}
+	a.debugToolResult(t.Name(), call.ID, result)
 	return tool.Of(result)
+}
+
+func (a *Agent) debugToolResult(toolName, callID, result string) {
+	if !a.args.Debug {
+		return
+	}
+	fmt.Fprintf(stdout.Writer(), "[ocr-debug] tool result %s id=%s\n%s\n", toolName, callID, truncateDebugText(result, 4000))
+}
+
+func truncateDebugText(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + fmt.Sprintf("\n... truncated %d byte(s)", len(s)-max)
 }
 
 // findDiff returns the Diff for the given file path, or nil if not found.

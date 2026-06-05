@@ -252,10 +252,11 @@ Examples:
   ocr config set llm.model claude-opus-4-6
   ocr config set llm.protocol anthropic_exact
   ocr config set llm.extra_body '{"thinking":{"type":"disabled"}}'
+  ocr config set llm.debug true
   ocr config set language English
   ocr config set telemetry.enabled true
 
-Supported keys: llm.url, llm.auth_token, llm.model, llm.protocol, llm.use_anthropic, llm.extra_body, language, telemetry.enabled, telemetry.exporter, telemetry.otlp_endpoint, telemetry.content_logging
+Supported keys: llm.url, llm.auth_token, llm.model, llm.protocol, llm.use_anthropic, llm.extra_body, llm.debug, language, telemetry.enabled, telemetry.exporter, telemetry.otlp_endpoint, telemetry.content_logging
 
 llm.protocol values:
   anthropic        Anthropic Messages API, append /v1/messages to base URLs

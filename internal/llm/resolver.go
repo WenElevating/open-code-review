@@ -18,6 +18,7 @@ type ResolvedEndpoint struct {
 	AutoAppendPath bool           // append default protocol path to base URLs
 	Source         string         // human-readable config source label
 	ExtraBody      map[string]any // vendor-specific request body fields
+	Debug          bool           // print request/response diagnostics
 }
 
 // Environment variable names for OCR-specific configuration.
@@ -100,6 +101,7 @@ type llmFileConfig struct {
 	Protocol     string         `json:"protocol,omitempty"`
 	UseAnthropic *bool          `json:"use_anthropic,omitempty"` // pointer to distinguish unset from false
 	ExtraBody    map[string]any `json:"extra_body,omitempty"`
+	Debug        bool           `json:"debug,omitempty"`
 }
 
 type configFile struct {
@@ -140,6 +142,7 @@ func tryOCRConfig(path string) (ResolvedEndpoint, bool, error) {
 	ep := endpointFromProtocol(cfg.Llm.URL, cfg.Llm.AuthToken, cfg.Llm.Model, protocol)
 	ep.Source = "OCR config file"
 	ep.ExtraBody = cfg.Llm.ExtraBody
+	ep.Debug = cfg.Llm.Debug
 	return ep, true, nil
 }
 

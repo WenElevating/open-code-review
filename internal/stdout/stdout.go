@@ -38,3 +38,16 @@ func Quiet() func() {
 		mu.Unlock()
 	}
 }
+
+// SetWriterForTest replaces stdout for tests and returns a restore function.
+func SetWriterForTest(writer io.Writer) func() {
+	mu.Lock()
+	old := w
+	w = writer
+	mu.Unlock()
+	return func() {
+		mu.Lock()
+		w = old
+		mu.Unlock()
+	}
+}
