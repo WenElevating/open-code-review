@@ -134,6 +134,20 @@ const (
 	tokenWarningThreshold = 0.80 // immediate sync compression
 )
 
+const maxEmptyLLMResponseRetries = 3
+
+var sleepEmptyLLMResponseRetry = func(ctx context.Context, attempt int) error {
+	delay := time.Second << uint(attempt)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // round groups consecutive messages starting with an assistant message
 // followed by zero or more tool result messages.
 type round struct {
@@ -455,10 +469,22 @@ func (a *Agent) dispatchSubtasks(ctx context.Context) ([]model.LlmComment, error
 
 	failed := atomic.LoadInt64(&a.subtaskFailed)
 	if failed > 0 && failed == dispatched {
+		if warning := firstWarningOfType(a.Warnings(), "subtask_error"); warning != nil {
+			return nil, fmt.Errorf("all %d file review(s) failed — check your LLM configuration and API key; first error for %s: %s", dispatched, warning.File, warning.Message)
+		}
 		return nil, fmt.Errorf("all %d file review(s) failed — check your LLM configuration and API key", dispatched)
 	}
 
 	return a.args.CommentCollector.Comments(), nil
+}
+
+func firstWarningOfType(warnings []AgentWarning, warningType string) *AgentWarning {
+	for i := range warnings {
+		if warnings[i].Type == warningType {
+			return &warnings[i]
+		}
+	}
+	return nil
 }
 
 // executeSubtask performs the Plan Phase + Main Loop for a single file.
@@ -794,6 +820,20 @@ func (a *Agent) performLlmCodeReview(ctx context.Context, messages []llm.Message
 
 		content := resp.Content()
 		calls := resp.ToolCalls()
+
+		if content == "" && len(calls) == 0 {
+			msg := fmt.Sprintf("empty LLM response for %s: no text and no tool calls; provider may not support the configured protocol or tool-calling response format", newPath)
+			if consecutiveEmptyRounds >= maxEmptyLLMResponseRetries-1 {
+				return fmt.Errorf("%s after %d attempt(s)", msg, consecutiveEmptyRounds+1)
+			}
+			fmt.Fprintf(stdout.Writer(), "[ocr] %s; retrying in %s (attempt %d/%d)\n",
+				msg, time.Second<<uint(consecutiveEmptyRounds), consecutiveEmptyRounds+1, maxEmptyLLMResponseRetries)
+			if err := sleepEmptyLLMResponseRetry(ctx, consecutiveEmptyRounds); err != nil {
+				return fmt.Errorf("%s: retry interrupted: %w", msg, err)
+			}
+			consecutiveEmptyRounds++
+			continue
+		}
 
 		if len(calls) == 0 {
 			// No tool calls - remind the model
