@@ -11,12 +11,13 @@ import (
 
 // ResolvedEndpoint holds the resolved LLM endpoint configuration.
 type ResolvedEndpoint struct {
-	URL       string
-	Token     string
-	Model     string
-	Protocol  string         // "anthropic" or "openai"
-	Source    string         // human-readable config source label
-	ExtraBody map[string]any // vendor-specific request body fields
+	URL            string
+	Token          string
+	Model          string
+	Protocol       string         // "anthropic" or "openai"
+	AutoAppendPath bool           // append default protocol path to base URLs
+	Source         string         // human-readable config source label
+	ExtraBody      map[string]any // vendor-specific request body fields
 }
 
 // Environment variable names for OCR-specific configuration.
@@ -56,6 +57,9 @@ func ResolveEndpoint(configPath string) (ResolvedEndpoint, error) {
 		if ok && ep.URL != "" && ep.Token != "" && ep.Model != "" {
 			ep.Source = s.name
 			ep.Model = stripModelSuffix(ep.Model)
+			if !isKnownProtocol(ep.Protocol) {
+				return ResolvedEndpoint{}, fmt.Errorf("resolve %s: unsupported llm.protocol %q", s.name, ep.Protocol)
+			}
 			return ep, nil
 		}
 	}
@@ -83,7 +87,9 @@ func tryOCREnv() (ResolvedEndpoint, bool, error) {
 		protocol = "openai"
 	}
 
-	return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: protocol, Source: "OCR environment"}, true, nil
+	ep := endpointFromProtocol(url, token, model, protocol)
+	ep.Source = "OCR environment"
+	return ep, true, nil
 }
 
 // llmFileConfig represents the llm section in config.json.
@@ -91,6 +97,7 @@ type llmFileConfig struct {
 	URL          string         `json:"url,omitempty"`
 	AuthToken    string         `json:"auth_token,omitempty"`
 	Model        string         `json:"model,omitempty"`
+	Protocol     string         `json:"protocol,omitempty"`
 	UseAnthropic *bool          `json:"use_anthropic,omitempty"` // pointer to distinguish unset from false
 	ExtraBody    map[string]any `json:"extra_body,omitempty"`
 }
@@ -118,17 +125,22 @@ func tryOCRConfig(path string) (ResolvedEndpoint, bool, error) {
 		return ResolvedEndpoint{}, false, nil
 	}
 
-	useAnthropic := true // default true
-	if cfg.Llm.UseAnthropic != nil {
-		useAnthropic = *cfg.Llm.UseAnthropic
+	protocol := cfg.Llm.Protocol
+	if protocol == "" {
+		useAnthropic := true // default true
+		if cfg.Llm.UseAnthropic != nil {
+			useAnthropic = *cfg.Llm.UseAnthropic
+		}
+		protocol = "anthropic"
+		if !useAnthropic {
+			protocol = "openai"
+		}
 	}
 
-	protocol := "anthropic"
-	if !useAnthropic {
-		protocol = "openai"
-	}
-
-	return ResolvedEndpoint{URL: cfg.Llm.URL, Token: cfg.Llm.AuthToken, Model: cfg.Llm.Model, Protocol: protocol, Source: "OCR config file", ExtraBody: cfg.Llm.ExtraBody}, true, nil
+	ep := endpointFromProtocol(cfg.Llm.URL, cfg.Llm.AuthToken, cfg.Llm.Model, protocol)
+	ep.Source = "OCR config file"
+	ep.ExtraBody = cfg.Llm.ExtraBody
+	return ep, true, nil
 }
 
 // tryCCEnv reads Claude Code environment variables.
@@ -142,7 +154,7 @@ func tryCCEnv() (ResolvedEndpoint, bool, error) {
 
 	url := ensureMessagesSuffix(baseURL)
 
-	return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "anthropic", Source: "Claude Code environment"}, true, nil
+	return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "anthropic", AutoAppendPath: true, Source: "Claude Code environment"}, true, nil
 }
 
 // tryShellRC parses ~/.zshrc and ~/.bashrc for ANTHROPIC_* exports.
@@ -224,7 +236,31 @@ func parseShellRC(path string) (ResolvedEndpoint, bool, error) {
 
 	url := ensureMessagesSuffix(baseURL)
 
-	return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "anthropic", Source: "Shell rc file"}, true, nil
+	return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "anthropic", AutoAppendPath: true, Source: "Shell rc file"}, true, nil
+}
+
+func endpointFromProtocol(url, token, model, protocol string) ResolvedEndpoint {
+	switch protocol {
+	case "anthropic":
+		return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "anthropic", AutoAppendPath: true}
+	case "anthropic_exact":
+		return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "anthropic", AutoAppendPath: false}
+	case "openai":
+		return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "openai", AutoAppendPath: true}
+	case "openai_exact":
+		return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: "openai", AutoAppendPath: false}
+	default:
+		return ResolvedEndpoint{URL: url, Token: token, Model: model, Protocol: protocol}
+	}
+}
+
+func isKnownProtocol(protocol string) bool {
+	switch protocol {
+	case "anthropic", "openai":
+		return true
+	default:
+		return false
+	}
 }
 
 // ensureMessagesSuffix appends /v1/messages to base URLs that lack a versioned path.

@@ -115,3 +115,40 @@ func TestResolveEndpoint_ConfigFileStripsModelSuffix(t *testing.T) {
 		t.Errorf("expected source %q, got %q", "OCR config file", ep.Source)
 	}
 }
+
+func TestResolveEndpoint_ConfigFileProtocolOverridesUseAnthropic(t *testing.T) {
+	t.Setenv("OCR_LLM_URL", "")
+	t.Setenv("OCR_LLM_TOKEN", "")
+	t.Setenv("OCR_LLM_MODEL", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
+
+	cfg := configFile{
+		Llm: llmFileConfig{
+			URL:          "https://open.bigmodel.cn/api/anthropic",
+			AuthToken:    "test-token",
+			Model:        "glm-4.5",
+			Protocol:     "anthropic_exact",
+			UseAnthropic: boolPtr(false),
+		},
+	}
+	data, _ := json.Marshal(cfg)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	os.WriteFile(cfgPath, data, 0644)
+
+	ep, err := ResolveEndpoint(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Protocol != "anthropic" {
+		t.Errorf("expected wire protocol %q, got %q", "anthropic", ep.Protocol)
+	}
+	if ep.AutoAppendPath {
+		t.Fatal("expected exact endpoint to disable URL path appending")
+	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}

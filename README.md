@@ -117,7 +117,7 @@ sudo cp dist/opencodereview /usr/local/bin/ocr
 ocr config set llm.url https://api.anthropic.com/v1/messages
 ocr config set llm.auth_token your-api-key-here
 ocr config set llm.model claude-opus-4-6
-ocr config set llm.use_anthropic true
+ocr config set llm.protocol anthropic
 
 # Option B: Environment variables (highest priority)
 export OCR_LLM_URL=https://api.anthropic.com/v1/messages
@@ -327,6 +327,7 @@ Config file: `~/.opencodereview/config.json`
 | `llm.url` | string | `https://api.openai.com/v1/chat/completions` |
 | `llm.auth_token` | string | `sk-xxxxxxx` |
 | `llm.model` | string | `claude-opus-4-6` |
+| `llm.protocol` | string | `anthropic` \| `anthropic_exact` \| `openai` \| `openai_exact` |
 | `llm.use_anthropic` | boolean | `true` \| `false` |
 | `language` | string | `English` \| `Chinese` (default: Chinese) |
 | `telemetry.enabled` | boolean | `true` \| `false` |
@@ -335,6 +336,15 @@ Config file: `~/.opencodereview/config.json`
 | `telemetry.content_logging` | boolean | Include prompts in telemetry |
 
 Environment variables take precedence over the config file.
+
+`llm.protocol` selects the API type:
+
+- `anthropic`: Anthropic Messages API, appends `/v1/messages` when `llm.url` is a base URL
+- `anthropic_exact`: Anthropic Messages API, uses `llm.url` exactly as configured
+- `openai`: OpenAI Chat Completions API, appends `/chat/completions` when `llm.url` is a base URL
+- `openai_exact`: OpenAI Chat Completions API, uses `llm.url` exactly as configured
+
+`llm.use_anthropic` remains supported for compatibility. When both are set, `llm.protocol` takes precedence.
 
 ### Environment Variables
 

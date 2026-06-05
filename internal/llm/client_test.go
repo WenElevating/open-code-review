@@ -1,7 +1,11 @@
 package llm
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewOpenAIClient_URLNormalization(t *testing.T) {
@@ -47,6 +51,17 @@ func TestNewOpenAIClient_URLNormalization(t *testing.T) {
 	}
 }
 
+func TestNewOpenAIClient_ExactEndpointDoesNotAppendChatCompletions(t *testing.T) {
+	client := NewOpenAIClient(ClientConfig{
+		URL:            "https://proxy.example.com/custom-openai",
+		AutoAppendPath: boolPtr(false),
+	})
+
+	if client.cfg.URL != "https://proxy.example.com/custom-openai" {
+		t.Errorf("got URL %q, want exact endpoint", client.cfg.URL)
+	}
+}
+
 func TestNewAnthropicClient_URLNormalization(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -87,5 +102,35 @@ func TestNewAnthropicClient_URLNormalization(t *testing.T) {
 				t.Errorf("got URL %q, want %q", client.cfg.URL, tt.wantURL)
 			}
 		})
+	}
+}
+
+func TestNewAnthropicClient_ExactEndpointDoesNotAppendMessagesPath(t *testing.T) {
+	client := NewAnthropicClient(ClientConfig{
+		URL:            "https://open.bigmodel.cn/api/anthropic",
+		AutoAppendPath: boolPtr(false),
+	})
+
+	if client.cfg.URL != "https://open.bigmodel.cn/api/anthropic" {
+		t.Errorf("got URL %q, want exact endpoint", client.cfg.URL)
+	}
+}
+
+func TestRetryWithCtxIncludesLastErrorWhenContextExpires(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	err := retryWithCtx(ctx, func() error {
+		return errors.New("request failed: dial tcp 127.0.0.1:443: connectex: No connection could be made")
+	})
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("expected context deadline in error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "dial tcp 127.0.0.1:443") {
+		t.Fatalf("expected last retry error in error, got %q", err.Error())
 	}
 }

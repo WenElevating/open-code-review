@@ -186,11 +186,12 @@ type FunctionDef struct {
 
 // ClientConfig holds configuration for connecting to an LLM service.
 type ClientConfig struct {
-	URL       string         // Full API endpoint URL
-	APIKey    string         // Bearer token / API key
-	Model     string         // Default model override
-	Timeout   time.Duration  // Request timeout
-	ExtraBody map[string]any // Vendor-specific fields merged into every request body
+	URL            string         // Full API endpoint URL or provider base URL
+	APIKey         string         // Bearer token / API key
+	Model          string         // Default model override
+	Timeout        time.Duration  // Request timeout
+	ExtraBody      map[string]any // Vendor-specific fields merged into every request body
+	AutoAppendPath *bool          // nil/default true appends protocol default path to base URLs
 }
 
 // --- Factory ---
@@ -199,10 +200,11 @@ type ClientConfig struct {
 // protocol: "anthropic" -> AnthropicClient, anything else -> OpenAIClient.
 func NewLLMClient(ep ResolvedEndpoint) LLMClient {
 	cfg := ClientConfig{
-		URL:       ep.URL,
-		APIKey:    ep.Token,
-		Model:     ep.Model,
-		ExtraBody: ep.ExtraBody,
+		URL:            ep.URL,
+		APIKey:         ep.Token,
+		Model:          ep.Model,
+		ExtraBody:      ep.ExtraBody,
+		AutoAppendPath: &ep.AutoAppendPath,
 	}
 	if ep.Protocol == "anthropic" {
 		return NewAnthropicClient(cfg)
@@ -290,7 +292,7 @@ func NewOpenAIClient(cfg ClientConfig) *OpenAIClient {
 		cfg.Timeout = 5 * time.Minute
 	}
 	baseURL := strings.TrimRight(cfg.URL, "/")
-	if !strings.HasSuffix(baseURL, "/chat/completions") {
+	if shouldAutoAppendPath(cfg) && !strings.HasSuffix(baseURL, "/chat/completions") {
 		cfg.URL = baseURL + "/chat/completions"
 	}
 	return &OpenAIClient{
@@ -487,7 +489,7 @@ func NewAnthropicClient(cfg ClientConfig) *AnthropicClient {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Minute
 	}
-	if !strings.HasSuffix(cfg.URL, "/v1/messages") && !strings.HasSuffix(cfg.URL, "/v1/messages/") {
+	if shouldAutoAppendPath(cfg) && !strings.HasSuffix(cfg.URL, "/v1/messages") && !strings.HasSuffix(cfg.URL, "/v1/messages/") {
 		baseURL := strings.TrimRight(cfg.URL, "/")
 		if !strings.HasSuffix(baseURL, "/v1/messages") {
 			cfg.URL = baseURL + "/v1/messages"
@@ -901,6 +903,9 @@ func retryWithCtx(ctx context.Context, fn func() error) error {
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		select {
 		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("context cancelled after last error: %w: %v", ctx.Err(), lastErr)
+			}
 			return fmt.Errorf("context cancelled: %w", ctx.Err())
 		default:
 		}
@@ -915,10 +920,19 @@ func retryWithCtx(ctx context.Context, fn func() error) error {
 		}
 
 		if attempt < maxRetries {
-			sleepWithBackoff(attempt)
+			if err := sleepWithBackoff(ctx, attempt, lastErr); err != nil {
+				if lastErr != nil {
+					return fmt.Errorf("context cancelled after last error: %w: %v", err, lastErr)
+				}
+				return fmt.Errorf("context cancelled: %w", err)
+			}
 		}
 	}
 	return fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func shouldAutoAppendPath(cfg ClientConfig) bool {
+	return cfg.AutoAppendPath == nil || *cfg.AutoAppendPath
 }
 
 func (c *OpenAIClient) withRetry(fn func() error) error {
@@ -967,7 +981,7 @@ func isRetryableStatus(status int) bool {
 
 // sleepWithBackoff sleeps for baseDelay * 2^attempt + jitter, capped at 60s.
 // Jitter spreads retries randomly within ±50% of the computed delay.
-func sleepWithBackoff(attempt int) {
+func sleepWithBackoff(ctx context.Context, attempt int, err error) error {
 	const (
 		baseDelay = 1 * time.Second
 		maxDelay  = 60 * time.Second
@@ -982,8 +996,19 @@ func sleepWithBackoff(attempt int) {
 	jitter := time.Duration(rand.Int63n(int64(delay))) - delay/2
 	delay += jitter
 
-	fmt.Fprintf(stdout.Writer(), "[llm] Retrying in %v (attempt info)... \n", delay)
-	time.Sleep(delay)
+	if err != nil {
+		fmt.Fprintf(stdout.Writer(), "[llm] Retrying in %v after error: %v\n", delay, err)
+	} else {
+		fmt.Fprintf(stdout.Writer(), "[llm] Retrying in %v\n", delay)
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // stripThinkTags removes reasoning wrapper tags from content.

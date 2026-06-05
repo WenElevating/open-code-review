@@ -250,9 +250,16 @@ Examples:
   ocr config set llm.url https://xx/v1/openai/chat/completions
   ocr config set llm.auth_token xxxxxxxxxx
   ocr config set llm.model claude-opus-4-6
+  ocr config set llm.protocol anthropic_exact
   ocr config set llm.extra_body '{"thinking":{"type":"disabled"}}'
   ocr config set language English
   ocr config set telemetry.enabled true
 
-Supported keys: llm.url, llm.auth_token, llm.model, llm.use_anthropic, llm.extra_body, language, telemetry.enabled, telemetry.exporter, telemetry.otlp_endpoint, telemetry.content_logging`)
+Supported keys: llm.url, llm.auth_token, llm.model, llm.protocol, llm.use_anthropic, llm.extra_body, language, telemetry.enabled, telemetry.exporter, telemetry.otlp_endpoint, telemetry.content_logging
+
+llm.protocol values:
+  anthropic        Anthropic Messages API, append /v1/messages to base URLs
+  anthropic_exact  Anthropic Messages API, use llm.url exactly as configured
+  openai           OpenAI Chat Completions API, append /chat/completions to base URLs
+  openai_exact     OpenAI Chat Completions API, use llm.url exactly as configured`)
 }
