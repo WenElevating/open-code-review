@@ -62,6 +62,8 @@
   ".exs",
   ".erl",
   ".hrl",
+  ".ets",
+  ".json5",
   ".dart",
   ".tf"
 ]
